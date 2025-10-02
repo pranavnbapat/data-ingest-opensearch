@@ -13,8 +13,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Body, BackgroundTasks, HTTPException
 from pydantic import BaseModel, field_validator
 
-# import your indexer
-from create_neural_search_index import run_index, MODEL_CONFIG, ALLOWED_MODELS
+from create_neural_search_index import run_index, MODEL_CONFIG
 
 app = FastAPI(title="Neural Search Indexer")
 

@@ -49,9 +49,8 @@ ALLOWED_MODELS = list(MODEL_CONFIG.keys())
 
 def get_latest_json_file() -> str:
     """
-    Find the latest JSON snapshot in ../data-prep-opensearch/output.
+    Find the latest JSON snapshot
     Falls back to *.json if no 'final_output_*.json' matches.
-    You can override the directory with DATA_PREP_OUTPUT_DIR.
     """
     # One folder back from this file (create_neural_search_index/)
     root = Path(__file__).resolve().parent.parent
@@ -531,7 +530,6 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
         logging.info("Processing model: %s", MODEL)
 
         tokenizer = AutoTokenizer.from_pretrained(CONFIG["tokenizer"])
-        # Prevents spurious warnings for long texts; you chunk before 512 anyway
         tokenizer.model_max_length = 10 ** 9
 
         INDEX_NAME = CONFIG["index"]
