@@ -1,0 +1,38 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Logs
+*.log
+log/
+logs/
+
+# Editors / IDE
+.vscode/
+.idea/
+*.iml
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+venv*/
+.python-version
+
+# Env files
+.env
+.env.*
+!.env.sample
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Project specific
+output/
+*.tmp
+*.bak
+*.swp
