@@ -18,9 +18,8 @@ from create_neural_search_index import run_index, MODEL_CONFIG
 app = FastAPI(title="Neural Search Indexer")
 
 OPENAPI_EXAMPLES = {
-    "all_models": {"summary": "Run all configured models", "value": {"models": None}},
-    "mpnet_only": {"summary": "Run mpnetv2 only", "value": {"models": ["mpnetv2"]}},
-    "two_models": {"summary": "Run two models", "value": {"models": ["mpnetv2", "msmarco"]}},
+    "dev": {"summary": "Run in DEV", "value": {"env_mode": "DEV"}},
+    "prd": {"summary": "Run in PRD", "value": {"env_mode": "PRD"}},
 }
 
 class EnvMode(str, Enum):
@@ -84,26 +83,8 @@ class PerJobLogHandler(logging.Handler):
 
 # -------- Request schema --------
 class RunParams(BaseModel):
-    models: Optional[List[str]] = None        # e.g. ["mpnetv2"] or None for all
     env_mode: Optional[EnvMode] = None
-
     model_config = {"extra": "ignore"}
-
-    @field_validator("models")
-    @classmethod
-    def validate_models(cls, v):
-        if v is None:
-            return None
-        known = set(MODEL_CONFIG.keys())
-        bad = [m for m in v if m not in known]
-        if bad:
-            raise ValueError(f"Unknown model(s): {bad}. Known: {sorted(known)}")
-        # preserve user order, remove duplicates
-        seen, out = set(), []
-        for m in v:
-            if m not in seen:
-                out.append(m); seen.add(m)
-        return out
 
 
 # -------- Routes --------
@@ -111,10 +92,10 @@ class RunParams(BaseModel):
 def healthz():
     return {"ok": True}
 
-def _run_job(job_id: str, models: Optional[List[str]], env_mode_val: str):
+def _run_job(job_id: str, env_mode_val: str):
     y = datetime.now().strftime("%Y")
     m = datetime.now().strftime("%m")
-    log_dir = os.path.join("output", env_mode_val, y, m, "job-logs")
+    log_dir = os.path.join("job-logs", env_mode_val, y, m)
 
     handler = PerJobLogHandler(job_id, persist_dir=log_dir)
     handler.setLevel(logging.INFO)
@@ -128,8 +109,8 @@ def _run_job(job_id: str, models: Optional[List[str]], env_mode_val: str):
             job.status = JobStatus.running
             job.started_at = datetime.utcnow()
 
-        logging.info("Starting index job (env=%s, models=%s)", env_mode_val, models or "ALL")
-        summary = run_index(models=models, env_mode=env_mode_val)
+        logging.info("Starting index job (env=%s, models=%s)", env_mode_val, "ALL")
+        summary = run_index(models=None, env_mode=env_mode_val)
 
         with JOB_LOCK:
             job.summary = summary
@@ -149,11 +130,14 @@ def _run_job(job_id: str, models: Optional[List[str]], env_mode_val: str):
         root_logger.removeHandler(handler)
         handler.close()
 
-@app.post("/index/run")
+@app.post("/build_index/run")
 def run_index_endpoint(
-    params: RunParams = Body(..., openapi_examples=cast(Dict[str, Any], OPENAPI_EXAMPLES)),
+    params: Optional[RunParams] = Body(None, openapi_examples=cast(Dict[str, Any], OPENAPI_EXAMPLES)),
     bg: BackgroundTasks = None,
 ):
+    if params is None:
+        params = RunParams()
+
     # prevent concurrent runs
     with JOB_LOCK:
         if any(j.status == JobStatus.running for j in JOBS.values()):
@@ -168,12 +152,12 @@ def run_index_endpoint(
         id=job_id,
         status=JobStatus.queued,
         created_at=datetime.utcnow(),
-        models=params.models or [],
+        models=[],
     )
     with JOB_LOCK:
         JOBS[job_id] = job
 
-    bg.add_task(_run_job, job_id, params.models, env_mode_val)
+    bg.add_task(_run_job, job_id, env_mode_val)
     return {"status": "scheduled", "job_id": job_id}
 
 @app.get("/jobs")
