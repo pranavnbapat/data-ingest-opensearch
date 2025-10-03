@@ -510,6 +510,7 @@ class ModelRunSummary(TypedDict, total=False):
     new: int
     changed: int
     unchanged: int
+    removed: int
     deleted_docs: int      # count returned by delete_by_query
     written_ops: int       # sum of bulk successes
 
@@ -594,12 +595,26 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
                 else:
                     unchanged_ko_ids.append(ko_id)
 
+            removed_ko_ids: List[str] = []
+
+            PRUNE_REMOVED_KOS = True
+            if PRUNE_REMOVED_KOS:
+                existing_ko_ids = set(existing_meta.keys())
+                current_ko_ids = set(meta_docs.keys())  # one meta per KO in the current JSON
+                removed_ko_ids = sorted(existing_ko_ids - current_ko_ids)
+                if removed_ko_ids:
+                    try:
+                        pruned = delete_kos_by_id(INDEX_NAME, removed_ko_ids, reason="missing from new JSON")
+                        deleted_docs += int(pruned or 0)  # accumulate with 'changed' deletes
+                    except Exception as e:
+                        logging.warning("prune (removed KOs) failed: %s", e)
+
             # Scoped delete only for KOs that actually changed
             to_delete_ko_ids = changed_ko_ids
 
             logging.info(
-                "Plan → new=%d, changed=%d, unchanged=%d",
-                len(new_ko_ids), len(changed_ko_ids), len(unchanged_ko_ids)
+                "Plan → new=%d, changed=%d, unchanged=%d, removed=%d",
+                len(new_ko_ids), len(changed_ko_ids), len(unchanged_ko_ids), len(removed_ko_ids)
             )
 
             if to_delete_ko_ids:
@@ -612,7 +627,7 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
                         conflicts="proceed",
                         slices="auto"
                     )
-                    deleted_docs = int(resp.get("deleted") or 0)
+                    deleted_docs += int(resp.get("deleted") or 0)
                     logging.info(
                         "Deleted old docs for %d KO(s): deleted=%d",
                         len(to_delete_ko_ids), deleted_docs
@@ -628,6 +643,7 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
                     "json_file": latest_file,
                     "new": len(new_ko_ids),
                     "changed": len(changed_ko_ids),
+                    "removed": len(removed_ko_ids),
                     "unchanged": len(unchanged_ko_ids),
                     "deleted_docs": deleted_docs,
                     "written_ops": 0,
@@ -655,6 +671,7 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
                 "new": len(new_ko_ids),
                 "changed": len(changed_ko_ids),
                 "unchanged": len(unchanged_ko_ids),
+                "removed": len(removed_ko_ids),
                 "deleted_docs": deleted_docs,
                 "written_ops": written_ops,
             }
@@ -667,6 +684,7 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
                 "new": len(new_ko_ids),
                 "changed": len(changed_ko_ids),
                 "unchanged": len(unchanged_ko_ids),
+                "removed": len(removed_ko_ids),
                 "deleted_docs": deleted_docs,
                 "written_ops": written_ops,
             }
