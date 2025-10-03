@@ -1,0 +1,37 @@
+services:
+
+  data-ingest-opensearch:
+    build:
+      context: .
+    image: ghcr.io/pranavnbapat/data-ingest-opensearch:latest
+    container_name: data-ingest-opensearch
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ../data-prep-opensearch/output:/app/data-prep-output:ro
+      - ./job-logs:/app/job-logs
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else sys.exit(1)\"" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  data-ingest-opensearch-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: data-ingest-opensearch-scheduler
+    depends_on:
+      - data-ingest-opensearch
+    env_file:
+      - .env
+    restart: unless-stopped
+
+#    networks:
+#      - traefik-net
+
+#networks:
+#  traefik-net:
+#    external: true

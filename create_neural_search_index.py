@@ -1,4 +1,4 @@
-# create_neural_search_index/create_neural_search_index.py
+# create_neural_search_index.py
 
 """
 create_neural_search_index.py — incremental OpenSearch ingestion for neural search.
@@ -23,6 +23,7 @@ IDs & grouping
 
 import json
 import logging
+import os
 
 from collections import defaultdict
 from datetime import datetime, UTC
@@ -46,36 +47,49 @@ MODEL_CONFIG = {
 
 ALLOWED_MODELS = list(MODEL_CONFIG.keys())
 
-
-def get_latest_json_file() -> str:
+def get_latest_json_file(env_mode: Optional[str] = None) -> str:
     """
-    Find the latest JSON snapshot
-    Falls back to *.json if no 'final_output_*.json' matches.
+    Find the latest snapshot inside:
+      <DATA_PREP_OUTPUT_DIR or repo default>/ <ENV_MODE> / ** / final_output_*.json
+
+    ENV resolution (case-insensitive):
+      1) explicit env_mode arg
+      2) os.environ["ENV_MODE"]
+      3) "DEV"
     """
-    # One folder back from this file (create_neural_search_index/)
-    root = Path(__file__).resolve().parent.parent
-    default_dir = root / "data-prep-opensearch" / "output"
+    # Resolve ENV (DEV/PRD)
+    env = (env_mode or os.getenv("ENV_MODE") or "DEV").upper()
+    if env not in {"DEV", "PRD"}:
+        raise ValueError(f"Invalid ENV_MODE {env!r}. Use DEV or PRD")
 
-    out_dir = Path(os.getenv("DATA_PREP_OUTPUT_DIR", str(default_dir))).resolve()
-    if not out_dir.exists():
-        raise FileNotFoundError(f"Output folder not found: {out_dir}")
+    # Default output root: ../data-prep-opensearch/output (repo layout)
+    repo_root = Path(__file__).resolve().parent.parent
+    default_dir = repo_root / "data-prep-opensearch" / "output"
 
-    # Prefer our snapshot naming, ignore temp files
+    # Allow override via env var
+    out_root = Path(os.getenv("DATA_PREP_OUTPUT_DIR", str(default_dir))).resolve()
+    env_dir = out_root / env
+    if not env_dir.exists():
+        raise FileNotFoundError(f"Output folder not found for env {env}: {env_dir}")
+
+    # Prefer our snapshot naming, search recursively, ignore tmp files
+    # e.g. output/PRD/2025/10/final_output_*.json
     candidates = sorted(
-        [p for p in out_dir.glob("final_output_*.json") if p.is_file() and not p.name.endswith(".tmp")],
+        [p for p in env_dir.rglob("final_output_*.json") if p.is_file() and not p.name.endswith(".tmp")],
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+
+    # Fallback: any *.json in the env bucket
     if not candidates:
         candidates = sorted(
-            [p for p in out_dir.glob("*.json") if p.is_file() and not p.name.endswith(".tmp")],
+            [p for p in env_dir.rglob("*.json") if p.is_file() and not p.name.endswith(".tmp")],
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
 
     if not candidates:
-        raise FileNotFoundError(f"No JSON files found in {out_dir}!")
-
+        raise FileNotFoundError(f"No JSON files found under {env_dir}!")
     return str(candidates[0])
 
 
@@ -514,7 +528,7 @@ class ModelRunSummary(TypedDict, total=False):
     deleted_docs: int      # count returned by delete_by_query
     written_ops: int       # sum of bulk successes
 
-def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
+def run_index(models: Optional[List[str]] = None, env_mode: Optional[str] = None) -> Dict[str, ModelRunSummary]:
     """
     Execute the incremental indexer for the selected models (default: all in MODEL_CONFIG).
     Returns a summary per model for API/monitoring.
@@ -546,7 +560,7 @@ def run_index(models: Optional[List[str]] = None) -> Dict[str, ModelRunSummary]:
         latest_file: str = ""
 
         try:
-            latest_file = get_latest_json_file()
+            latest_file = get_latest_json_file(env_mode)
             logging.info("Using file: %s", latest_file)
 
             processed_data = process_json_for_opensearch(latest_file, tokenizer, MODEL)

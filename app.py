@@ -17,12 +17,15 @@ from create_neural_search_index import run_index, MODEL_CONFIG
 
 app = FastAPI(title="Neural Search Indexer")
 
-OPENAPI_EXAMPLES: Dict[str, Any] = {
-    "all_models": {"summary": "Run all configured models", "value": {"models": None, "background": True}},
-    "mpnet_only": {"summary": "Run mpnetv2 only", "value": {"models": ["mpnetv2"], "background": True}},
-    "two_models": {"summary": "Run two models", "value": {"models": ["mpnetv2", "msmarco"], "background": True}},
+OPENAPI_EXAMPLES = {
+    "all_models": {"summary": "Run all configured models", "value": {"models": None}},
+    "mpnet_only": {"summary": "Run mpnetv2 only", "value": {"models": ["mpnetv2"]}},
+    "two_models": {"summary": "Run two models", "value": {"models": ["mpnetv2", "msmarco"]}},
 }
 
+class EnvMode(str, Enum):
+    DEV = "DEV"
+    PRD = "PRD"
 
 # -------- Job tracking --------
 class JobStatus(str, Enum):
@@ -82,7 +85,7 @@ class PerJobLogHandler(logging.Handler):
 # -------- Request schema --------
 class RunParams(BaseModel):
     models: Optional[List[str]] = None        # e.g. ["mpnetv2"] or None for all
-    background: bool = True
+    env_mode: Optional[EnvMode] = None
 
     model_config = {"extra": "ignore"}
 
@@ -108,8 +111,12 @@ class RunParams(BaseModel):
 def healthz():
     return {"ok": True}
 
-def _run_job(job_id: str, models: Optional[List[str]]):
-    handler = PerJobLogHandler(job_id)
+def _run_job(job_id: str, models: Optional[List[str]], env_mode_val: str):
+    y = datetime.now().strftime("%Y")
+    m = datetime.now().strftime("%m")
+    log_dir = os.path.join("output", env_mode_val, y, m, "job-logs")
+
+    handler = PerJobLogHandler(job_id, persist_dir=log_dir)
     handler.setLevel(logging.INFO)
     handler.setFormatter(logging.Formatter("%(message)s"))
     root_logger = logging.getLogger()
@@ -121,8 +128,8 @@ def _run_job(job_id: str, models: Optional[List[str]]):
             job.status = JobStatus.running
             job.started_at = datetime.utcnow()
 
-        logging.info("Starting index job (models=%s)", models or "ALL")
-        summary = run_index(models=models)
+        logging.info("Starting index job (env=%s, models=%s)", env_mode_val, models or "ALL")
+        summary = run_index(models=models, env_mode=env_mode_val)
 
         with JOB_LOCK:
             job.summary = summary
@@ -152,6 +159,10 @@ def run_index_endpoint(
         if any(j.status == JobStatus.running for j in JOBS.values()):
             raise HTTPException(status_code=409, detail="Another index job is already running")
 
+    env_mode_val = (params.env_mode.value if params.env_mode else (os.getenv("ENV_MODE") or "DEV")).upper()
+    if env_mode_val not in {"DEV", "PRD"}:
+        raise HTTPException(status_code=400, detail=f"Invalid ENV_MODE {env_mode_val!r}. Use DEV or PRD")
+
     job_id = uuid4().hex
     job = Job(
         id=job_id,
@@ -162,12 +173,9 @@ def run_index_endpoint(
     with JOB_LOCK:
         JOBS[job_id] = job
 
-    if params.background:
-        bg.add_task(_run_job, job_id, params.models)
-        return {"status": "scheduled", "job_id": job_id}
-    else:
-        _run_job(job_id, params.models)
-        return {"status": JOBS[job_id].status, "job_id": job_id, "summary": JOBS[job_id].summary}
+    bg.add_task(_run_job, job_id, params.models, env_mode_val)
+    return {"status": "scheduled", "job_id": job_id}
+
 @app.get("/jobs")
 def list_jobs():
     with JOB_LOCK:
