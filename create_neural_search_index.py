@@ -23,7 +23,6 @@ IDs & grouping
 
 import json
 import logging
-import os
 
 from collections import defaultdict
 from datetime import datetime, UTC
@@ -34,7 +33,7 @@ from transformers import AutoTokenizer
 
 from utils import *
 
-dev_mode = True
+dev_mode = False
 
 # Apply `_dev` suffix to index names if dev_mode is True
 MODEL_CONFIG = {

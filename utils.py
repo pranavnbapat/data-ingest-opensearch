@@ -26,18 +26,18 @@ BASE_MODEL_CONFIG = {
     #     "pipeline": "neural_search_pipeline_minilml12v2",
     #     "index": "neural_search_index_minilml12v2"
     # },
-    "mpnetv2": {
-        "tokenizer": "sentence-transformers/all-mpnet-base-v2",
-        "dimension": 768,
-        "pipeline": "neural_search_pipeline_mpnetv2",
-        "index": "neural_search_index_mpnetv2"
-    },
-    # "msmarco": {
-    #     "tokenizer": "sentence-transformers/msmarco-distilbert-base-tas-b",
+    # "mpnetv2": {
+    #     "tokenizer": "sentence-transformers/all-mpnet-base-v2",
     #     "dimension": 768,
-    #     "pipeline": "neural_search_pipeline_msmarco_distilbert_v2",
-    #     "index": "neural_search_index_msmarco_distilbert"
-    # }
+    #     "pipeline": "neural_search_pipeline_mpnetv2",
+    #     "index": "neural_search_index_mpnetv2"
+    # },
+    "msmarco": {
+        "tokenizer": "sentence-transformers/msmarco-distilbert-base-tas-b",
+        "dimension": 768,
+        "pipeline": "neural_search_pipeline_msmarco_distilbert_v2",
+        "index": "neural_search_index_msmarco_distilbert"
+    }
 }
 
 MODEL_LOWERCASE_REQUIRED = {
